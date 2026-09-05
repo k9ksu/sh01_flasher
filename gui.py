@@ -27,6 +27,7 @@ from hexpatch import (parse_ihex, write_ihex, apply_params, check_base, Params,
 from hc32isp import HC32Programmer
 import get_firmware
 import probe
+import risk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE_HEX = os.path.join(HERE, "fw-v2-base.hex")
@@ -195,6 +196,8 @@ class App(tk.Tk):
             f"The HH trip ({hh}\u00b0C) is not above the ceiling ({temp}\u00b0C); the dryer will "
             "fault before it can reach the setpoint. Flash anyway?"):
             return
+        if hh > STOCK_HH_C and not self.acknowledge_risk():
+            return
         if not messagebox.askyesno(
             "Confirm",
             f"Flash SH01 on {port}?\n\n  ceiling {temp}\u00b0C\n  HH trip {hh}\u00b0C\n\n"
@@ -202,6 +205,34 @@ class App(tk.Tk):
             return
         self.progress["value"] = 0
         self.run_bg(self._flash_worker, port, temp, hh)
+
+    def acknowledge_risk(self) -> bool:
+        """Modal: user must type the acknowledgement phrase to proceed."""
+        dlg = tk.Toplevel(self)
+        dlg.title("Raising the over-temperature trip")
+        dlg.transient(self)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        ttk.Label(dlg, text=risk.TEXT, justify="left", font=("TkDefaultFont", 10)).pack(padx=16, pady=(14, 8))
+        ttk.Label(dlg, text=f"Type  {risk.PHRASE}  to continue:").pack(padx=16, anchor="w")
+        var = tk.StringVar()
+        entry = ttk.Entry(dlg, textvariable=var, width=32)
+        entry.pack(padx=16, pady=(2, 10), anchor="w")
+        entry.focus_set()
+        result = {"ok": False}
+        btns = ttk.Frame(dlg)
+        btns.pack(padx=16, pady=(0, 14), anchor="e")
+        ok = ttk.Button(btns, text="Continue", state="disabled",
+                        command=lambda: (result.update(ok=True), dlg.destroy()))
+        ok.pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="Cancel", command=dlg.destroy).pack(side="right")
+        var.trace_add("write", lambda *_: ok.configure(
+            state="normal" if var.get().strip().upper() == risk.PHRASE else "disabled"))
+        entry.bind("<Return>", lambda e: ok.invoke() if str(ok["state"]) == "normal" else None)
+        self.wait_window(dlg)
+        if result["ok"]:
+            self.log("Risk acknowledgement accepted for HH above stock.")
+        return result["ok"]
 
     def _flash_worker(self, port, temp, hh):
         patched, _ = self.build_patched()

@@ -12,6 +12,7 @@ import sys
 
 from hexpatch import parse_ihex, apply_params, Params, STOCK_HH_C
 from hc32isp import HC32Programmer
+import risk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,11 +26,15 @@ def main() -> None:
     ap.add_argument("--base", default=os.path.join(HERE, "fw-v2-base.hex"), help="stock v2 firmware hex")
     ap.add_argument("--shim", default=os.path.join(HERE, "m_flash.hc005"), help="RAM flash driver")
     ap.add_argument("--baud", type=int, default=9600)
+    ap.add_argument("--i-accept-the-risk", action="store_true", help=risk.cli_flag_text())
     ap.add_argument("--no-blank-check", action="store_true")
     args = ap.parse_args()
 
     if args.hh is None:
         args.hh = args.temp + 5
+    if args.hh > STOCK_HH_C and not args.i_accept_the_risk:
+        print(risk.TEXT)
+        sys.exit("Re-run with --i-accept-the-risk to raise the HH trip above stock.")
     if not os.path.exists(args.base):
         print(f"{args.base} not found -- downloading...")
         import get_firmware
